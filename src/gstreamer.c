@@ -44,7 +44,8 @@ bool obs_module_load(void)
 	gst_version(&major, &minor, &micro, &nano);
 	obs_log(LOG_INFO, "gst-runtime: %u.%u.%u", major, minor, micro);
 
-	struct obs_output_info output_info = {
+	struct obs_output_info output_info = 
+	{
 		.id = "hjm-gstreamer-output",
 		//.flags = OBS_OUTPUT_AV | OBS_OUTPUT_ENCODED,
 		.flags = OBS_OUTPUT_VIDEO,

@@ -20,20 +20,25 @@
 
 #pragma warning(disable : 4047)
 #pragma warning(disable : 4244)
+#pragma warning(disable : 4022)
 
+#include <pthread.h>
 #include <obs-module.h>
 #include <gst/gst.h>
 #include <gst/app/app.h>
+#include <gst/rtsp-server/rtsp-server.h>
 #include <plugin-support.h>
 
 typedef struct {
-	GstElement *pipe;
+	//GstElement *pipe;
 	GstElement *video;
 	//GstElement *audio;
 	gsize buffer_size;
 	obs_output_t *output;
 	obs_data_t *settings;
+	char *testText;
 	struct obs_video_info ovi;
+	struct obs_audio_info oai;
 } data_t;
 
 static gboolean bus_callback(GstBus *bus, GstMessage *message, gpointer user_data)
@@ -115,19 +120,110 @@ void gstreamer_output_destroy(void *p)
 	obs_log(LOG_INFO, "gstreamer_output_destroy = end");
 }
 
+
+static void media_configure (GstRTSPMediaFactory * factory, GstRTSPMedia * media, gpointer user_data)
+{
+	obs_log(LOG_INFO, "media_configure = called");
+	data_t *data = user_data;
+
+	obs_log(LOG_INFO, " media_configure:");
+	obs_log(LOG_INFO, data->testText);
+
+	GstElement *element, *appsrc;
+
+
+	/* get the element used for providing the streams of the media */
+	element = gst_rtsp_media_get_element (media);
+
+	/* get our appsrc, we named it 'mysrc' with the name property */
+	appsrc = gst_bin_get_by_name_recurse_up (GST_BIN (element), "appsrc_video");
+
+	data->video = appsrc;
+	data->testText = "Test-3";
+
+	if (data->video == NULL) goto failedT;
+
+	gst_object_unref (appsrc);
+	gst_object_unref (element);
+
+	obs_log(LOG_INFO, "media_configure = end");
+	return;
+
+	failedT:
+	{
+		obs_log(LOG_INFO,"data->video is null\n");
+	}
+
+}
+
+
+bool start_rtsp_server (void *p)
+{
+	obs_log(LOG_INFO, "start_rtsp_server = called");
+
+	data_t *data = (data_t *)p;
+
+	obs_log(LOG_INFO, " start_rtsp_server:");
+	obs_log(LOG_INFO, data->testText);
+
+	GMainLoop *loop;
+	GstRTSPServer *server;
+    GstRTSPMountPoints *mounts;
+    GstRTSPMediaFactory *factory;
+
+	loop = g_main_loop_new (NULL, FALSE);
+	server = gst_rtsp_server_new ();
+	mounts = gst_rtsp_server_get_mount_points (server);
+	factory = gst_rtsp_media_factory_new ();
+
+	//char *pipe_string = g_strdup_printf("videotestsrc ! x264enc ! rtph264pay name=pay0 pt=96");
+	char *pipe_string = g_strdup_printf("appsrc name=appsrc_video is-live=true format=GST_FORMAT_TIME do-timestamp=true ! video/x-raw, format=NV12, width=852, height=480, framerate=30/1 ! videoconvert ! x264enc tune=zerolatency ! video/x-h264, stream-format=byte-stream ! rtph264pay name=pay0 pt=96");
+
+	gst_rtsp_media_factory_set_launch(factory, pipe_string);
+
+	g_signal_connect (factory, "media-configure", (GCallback) media_configure, data);
+
+	gst_rtsp_mount_points_add_factory (mounts, "/test", factory);
+	g_object_unref (mounts);
+
+	//data->video = gst_bin_get_by_name(GST_BIN(data->pipe), "appsrc_video");
+
+	//if (data->video == NULL) goto failedT;
+
+
+	data->testText = "Test-2";
+
+	if (gst_rtsp_server_attach (server, NULL) == 0) goto failed;
+
+	obs_log(LOG_INFO, "stream ready at rtsp://127.0.0.1:8554/test\n");
+	
+	obs_log(LOG_INFO, "g_main_loop_run = before");
+	g_main_loop_run (loop);
+	obs_log(LOG_INFO, "g_main_loop_run = after");
+
+	obs_log(LOG_INFO, "start_rtsp_server = end");
+
+	return true;
+
+
+	failed: 
+	{
+		obs_log(LOG_INFO, "failed to attach the server\n");
+		return false;
+	}
+
+
+
+}
+
 bool gstreamer_output_start(void *p)
 {
 
 	obs_log(LOG_INFO, "gstreamer_output_start = called");
 	data_t *data = (data_t *)p;
 
-	//struct obs_audio_info oai;
-	//obs_get_audio_info(&oai);
-
-
-
 	obs_get_video_info(&data->ovi);
-	obs_get_video_info(&data->ovi);
+	//obs_get_audio_info(&data->oai);
 
 	GError *err = NULL;
 	char *format;
@@ -179,6 +275,13 @@ bool gstreamer_output_start(void *p)
 			format = NULL;
 			break;
 	}
+	
+	data->testText = "Test-1";
+
+	pthread_t id;
+	pthread_create(&id, NULL, start_rtsp_server, p);
+
+	//return true;
 
 	//gchar *pipe = g_strdup_printf(
 	//	"appsrc name=appsrc_video ! video/x-h264, width=%d, height=%d, stream-format=byte-stream ! h264parse ! udpsink host=localhost port=5000 "
@@ -193,7 +296,10 @@ bool gstreamer_output_start(void *p)
 		format, data->ovi.output_width, data->ovi.output_height, data->ovi.fps_num, data->ovi.fps_den, 
 		obs_data_get_string(data->settings, "pipeline"));
 
-	data->pipe = gst_parse_launch(pipe_string, &err);
+	//data->pipe = gst_parse_launch(pipe_string, &err);
+
+
+
 
 	if (err) 
 	{	
@@ -204,20 +310,20 @@ bool gstreamer_output_start(void *p)
 	}
 	else
 	{
-		obs_log(LOG_INFO, "gstreamer_output_start = gst_parse_launch = %s", pipe_string);
+		//obs_log(LOG_INFO, "gstreamer_output_start = gst_parse_launch = %s", pipe_string);
 	}
 
 	g_free(pipe_string);
 
 
-	data->video = gst_bin_get_by_name(GST_BIN(data->pipe), "appsrc_video");
+	//data->video = gst_bin_get_by_name(GST_BIN(data->pipe), "appsrc_video");
 	//data->audio = gst_bin_get_by_name(GST_BIN(data->pipe), "appsrc_audio");
 
-	GstBus *bus = gst_element_get_bus(data->pipe);
-	gst_bus_add_watch(bus, bus_callback, data);
-	gst_object_unref(bus);
+	//GstBus *bus = gst_element_get_bus(data->pipe);
+	//gst_bus_add_watch(bus, bus_callback, NULL);
+	//gst_object_unref(bus);
 
-	gst_element_set_state(data->pipe, GST_STATE_PLAYING);
+	//gst_element_set_state(data->pipe, GST_STATE_PLAYING);
 
 	if (!obs_output_can_begin_data_capture(data->output, 0)) 
 	{
@@ -247,21 +353,22 @@ void gstreamer_output_stop(void *p, uint64_t ts)
 	obs_output_end_data_capture(data->output);
 	obs_log(LOG_INFO, "gstreamer_output_stop = obs_output_end_data_capture stopped");
 
-	if (data->pipe) {
+	//if (data->pipe) 
+	{
 		gst_app_src_end_of_stream(GST_APP_SRC(data->video));
 		//gst_app_src_end_of_stream(GST_APP_SRC(data->audio));
 		obs_log(LOG_INFO, "gstreamer_output_stop = gst_app_src_end_of_stream");
-		GstBus *bus = gst_element_get_bus(data->pipe);	
-		gst_bus_remove_watch(bus);
-		gst_object_unref(bus);
+		//GstBus *bus = gst_element_get_bus(data->pipe);	
+		//gst_bus_remove_watch(bus);
+		//gst_object_unref(bus);
 
 
 		gst_object_unref(data->video);
 		//gst_object_unref(data->audio);
 
-		gst_element_set_state(data->pipe, GST_STATE_NULL);
-		gst_object_unref(data->pipe);
-		data->pipe = NULL;
+		//gst_element_set_state(data->pipe, GST_STATE_NULL);
+		//gst_object_unref(data->pipe);
+		//data->pipe = NULL;
 		obs_log(LOG_INFO, "gstreamer_output_stop = unref complete");
 	}
 }
@@ -289,13 +396,20 @@ void gstreamer_output_raw_video(void *p, struct video_data *frame)
 {
 	data_t *data = (data_t *)p;
 
-	GstBuffer *buffer = gst_buffer_new_wrapped_full(0, frame->data[0], data->buffer_size, 0, data->buffer_size, NULL, NULL);
-	gst_buffer_fill(buffer, 0, frame->data[0], data->buffer_size);
+	if (data->video != NULL)
+	{
+		GstBuffer *buffer = gst_buffer_new_wrapped_full(0, frame->data[0], data->buffer_size, 0, data->buffer_size, NULL, NULL);
+		gst_buffer_fill(buffer, 0, frame->data[0], data->buffer_size);
 
-	//GST_BUFFER_PTS(buffer) = frame->timestamp;
+		GST_BUFFER_PTS(buffer) = frame->timestamp;
 
-	gst_app_src_push_buffer(GST_APP_SRC(data->video), buffer);
-	//obs_log(LOG_INFO, "gstreamer_output_raw_video");
+		gst_app_src_push_buffer(GST_APP_SRC(data->video), buffer);
+		obs_log(LOG_INFO, data->testText);
+	}
+	else
+	{
+		obs_log(LOG_INFO, "gstreamer_output_raw_video: data->video is null");
+	}
 }
 
 void gstreamer_output_raw_audio(void *p, struct audio_data *frame)
@@ -336,3 +450,4 @@ obs_properties_t *gstreamer_output_get_properties(void *data)
 }
 #pragma warning(default : 4047)
 #pragma warning(default : 4244)
+#pragma warning(default : 4022)

@@ -22,13 +22,15 @@ pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0)
 pkg_search_module(gstreamer-video REQUIRED IMPORTED_TARGET gstreamer-video-1.0)
 pkg_search_module(gstreamer-audio REQUIRED IMPORTED_TARGET gstreamer-audio-1.0)
 pkg_search_module(gstreamer-net REQUIRED IMPORTED_TARGET gstreamer-net-1.0)
+pkg_search_module(gstreamer-rtsp-server REQUIRED IMPORTED_TARGET gstreamer-rtsp-server-1.0)
 
 target_link_libraries(${CMAKE_PROJECT_NAME} 
     PUBLIC PkgConfig::gstreamer
     PUBLIC PkgConfig::gstreamer-app
     PUBLIC PkgConfig::gstreamer-video
     PUBLIC PkgConfig::gstreamer-audio
-    PUBLIC PkgConfig::gstreamer-net)
+    PUBLIC PkgConfig::gstreamer-net
+    PUBLIC PkgConfig::gstreamer-rtsp-server)
 
 
 target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC ${GST_LINK_LIBRARIES})
